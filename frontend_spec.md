@@ -45,8 +45,8 @@ Behavior:
 ## 4. API contract (fill in once backend endpoints are finalized)
 | Action | Method | Endpoint | Notes |
 |---|---|---|---|
-| Upload image | POST | `/upload` | Returns: {filename, original_filename, extracted_text, entry_id, parsed_data: {restaurant, ticket_number, discrepancy_type, description}} |
-| Get table rows | GET | `/entries` | Returns: List of entries with fields: id, restaurant, ticket_number, discrepancy_type, extracted_text, description, status (matched/unmatched/needs_description) |
+| Upload image | POST | `/upload` | Multipart form: `file` (image), `restaurant` (optional string - one of 3 restaurants, overrides OCR extraction). Returns: {filename, original_filename, extracted_text, entry_id, parsed_data: {restaurant, ticket_number, discrepancy_type, description, extra_fields}} |
+| Get table rows | GET | `/entries` | Returns: List of entries with fields: id, restaurant, ticket_number, discrepancy_type, extracted_text, description, status (matched/needs_description/needs_ticket_number/needs_restaurant/needs_discrepancy_type/needs_review), extra_fields (dict), image_filename |
 | Update description | PATCH | `/entries/{id}` | Accepts: {description?: string, status?: string}; Returns: updated entry object |
 | Export CSV | GET | `/export` | Returns: CSV file with columns: restaurant, ticket_number, discrepancy_type, description, status, image_filename. Supports same filters as /entries (restaurant, ticket_number). Image filename exported instead of thumbnail. |
 
@@ -54,3 +54,6 @@ Behavior:
 | Date | Change | Reason |
 |------|--------|--------|
 | —    | Initial spec created | — |
+| 2026-09-18 | Added extra_fields to API response | Capture unexpected bill fields (Table, Staff, Terminal, etc.) |
+| 2026-09-18 | Added image_filename to API response | Store uploaded image filename for CSV export reference |
+| 2026-09-18 | Expanded status values | Added needs_ticket_number, needs_restaurant, needs_discrepancy_type, needs_review for granular missing-field tracking |

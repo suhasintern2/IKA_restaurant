@@ -65,3 +65,6 @@ exposes a REST API; frontend consumes it per `frontend_spec.md`.
 - Text parsing approach: Selected regex/keyword matching (extract ticket # and discrepancy type)
 - CSV export functionality: Selected GET /export endpoint with filtering support (restaurant, ticket_number)
 - CSV image representation: Selected to export stored image filename/path instead of thumbnail
+- Entry model: Added extra_fields (dict) for capturing unexpected bill fields, image_filename for CSV export reference
+- Status values: Expanded to matched, needs_description, needs_ticket_number, needs_restaurant, needs_discrepancy_type, needs_review
+- Parsing strategy: Retained regex/rule-based over LLM; multiple patterns with graceful degradation for schema flexibility

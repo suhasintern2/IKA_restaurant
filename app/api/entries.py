@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
+import json
 from app.models.entry import EntryCreate, EntryUpdate, Entry
 from app.storage.db import init_db, get_entries, get_entry_by_id, update_entry, create_entry
 import os
@@ -30,6 +31,14 @@ async def get_entries_endpoint(
     # Convert sqlite3.Row objects to Entry models
     entries = []
     for row in rows:
+        # Parse extra_fields from JSON if present
+        extra_fields = None
+        if row['extra_fields']:
+            try:
+                extra_fields = json.loads(row['extra_fields'])
+            except (json.JSONDecodeError, TypeError):
+                extra_fields = None
+
         entry = Entry(
             id=row['id'],
             restaurant=row['restaurant'],
@@ -37,7 +46,9 @@ async def get_entries_endpoint(
             discrepancy_type=row['discrepancy_type'],
             extracted_text=row['extracted_text'],
             description=row['description'],
-            status=row['status']
+            status=row['status'],
+            extra_fields=extra_fields,
+            image_filename=row['image_filename']
         )
         entries.append(entry)
 
@@ -68,6 +79,14 @@ async def update_entry_endpoint(entry_id: int, entry_update: EntryUpdate):
 
     if not update_data:
         # If no fields to update, return existing entry
+        # Parse extra_fields from JSON if present
+        extra_fields = None
+        if existing_entry['extra_fields']:
+            try:
+                extra_fields = json.loads(existing_entry['extra_fields'])
+            except (json.JSONDecodeError, TypeError):
+                extra_fields = None
+
         return Entry(
             id=existing_entry['id'],
             restaurant=existing_entry['restaurant'],
@@ -75,7 +94,9 @@ async def update_entry_endpoint(entry_id: int, entry_update: EntryUpdate):
             discrepancy_type=existing_entry['discrepancy_type'],
             extracted_text=existing_entry['extracted_text'],
             description=existing_entry['description'],
-            status=existing_entry['status']
+            status=existing_entry['status'],
+            extra_fields=extra_fields,
+            image_filename=existing_entry['image_filename']
         )
 
     # Update the entry
@@ -88,6 +109,14 @@ async def update_entry_endpoint(entry_id: int, entry_update: EntryUpdate):
     if not updated_entry:
         raise HTTPException(status_code=404, detail="Entry not found after update")
 
+    # Parse extra_fields from JSON if present
+    extra_fields = None
+    if updated_entry['extra_fields']:
+        try:
+            extra_fields = json.loads(updated_entry['extra_fields'])
+        except (json.JSONDecodeError, TypeError):
+            extra_fields = None
+
     return Entry(
         id=updated_entry['id'],
         restaurant=updated_entry['restaurant'],
@@ -95,7 +124,9 @@ async def update_entry_endpoint(entry_id: int, entry_update: EntryUpdate):
         discrepancy_type=updated_entry['discrepancy_type'],
         extracted_text=updated_entry['extracted_text'],
         description=updated_entry['description'],
-        status=updated_entry['status']
+        status=updated_entry['status'],
+        extra_fields=extra_fields,
+        image_filename=updated_entry['image_filename']
     )
 
 # Note: POST /entries would be called internally by the upload endpoint

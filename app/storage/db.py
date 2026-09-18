@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import typing as t
+import json
 from contextlib import contextmanager
 from datetime import datetime
 from app.models.entry import EntryInDBBase
@@ -22,6 +23,7 @@ def init_db():
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
 
     with get_db_connection() as conn:
+        # Create table if it doesn't exist
         conn.execute("""
             CREATE TABLE IF NOT EXISTS entries (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,25 +33,49 @@ def init_db():
                 extracted_text TEXT NOT NULL,
                 description TEXT,
                 status TEXT NOT NULL,
+                extra_fields TEXT,
+                image_filename TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Add extra_fields column if it doesn't exist (for existing databases) -- JSON string for extra fields
+        try:
+            conn.execute("ALTER TABLE entries ADD COLUMN extra_fields TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            # Column already exists, which is fine
+            pass
+
+        # Add image_filename column if it doesn't exist
+        try:
+            conn.execute("ALTER TABLE entries ADD COLUMN image_filename TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            # Column already exists, which is fine
+            pass
+
         conn.commit()
 
 def create_entry(entry: EntryInDBBase) -> int:
     """Create a new entry and return its ID."""
     with get_db_connection() as conn:
+        # Convert extra_fields dict to JSON string for storage
+        extra_fields_json = json.dumps(entry.extra_fields) if entry.extra_fields else None
+
         cursor = conn.execute("""
-            INSERT INTO entries (restaurant, ticket_number, discrepancy_type, extracted_text, description, status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO entries (restaurant, ticket_number, discrepancy_type, extracted_text, description, status, extra_fields, image_filename)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             entry.restaurant,
             entry.ticket_number,
             entry.discrepancy_type,
             entry.extracted_text,
             entry.description,
-            entry.status
+            entry.status,
+            extra_fields_json,
+            entry.image_filename
         ))
         conn.commit()
         return cursor.lastrowid
@@ -88,9 +114,13 @@ def update_entry(entry_id: int, updates: t.Dict[str, t.Any]) -> bool:
     set_clauses = []
     params = []
     for key, value in updates.items():
-        if key in ['restaurant', 'ticket_number', 'discrepancy_type', 'extracted_text', 'description', 'status']:
+        if key in ['restaurant', 'ticket_number', 'discrepancy_type', 'extracted_text', 'description', 'status', 'extra_fields', 'image_filename']:
+            # Handle extra_fields specially - convert to JSON string for storage
+            if key == 'extra_fields' and value is not None:
+                params.append(json.dumps(value))
+            else:
+                params.append(value)
             set_clauses.append(f"{key} = ?")
-            params.append(value)
 
     if not set_clauses:
         return False

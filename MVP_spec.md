@@ -23,7 +23,9 @@ must be prompted to supply one before it's usable.
    - Discrepancy type (void / discount / promotion)
    - Extracted raw text
    - Description (prompted from user if missing)
-   - Status (matched / unmatched / needs description)
+   - Status (matched / needs_description / needs_ticket_number / needs_restaurant / needs_discrepancy_type / needs_review)
+   - Extra fields (key-value pairs for unexpected bill fields like Table, Staff, Terminal)
+   - Image filename (stored filename for CSV export reference)
 4. **Export the table to CSV** via a button.
 
 ## 3. Explicitly out of scope for MVP
@@ -73,3 +75,8 @@ must be prompted to supply one before it's usable.
 | 2026-09-18 | Selected regex/keyword matching for text parsing | Extract ticket number (6+ digits) and discrepancy type (void/discount/promotion keywords); restaurant and description left for user input |
 | 2026-09-18 | Added CSV export functionality with filtering support | Exports filtered/same view as /entries endpoint; exports image filename/path instead of thumbnail |
 | 2026-09-18 | Export image filename/path in CSV (instead of thumbnail) | Thumbnail cannot be exported to CSV; filename/path allows referencing original image |
+| 2026-09-18 | Enhanced field parsing with schema flexibility | Improved restaurant name extraction, ticket number detection, description extraction, and extra_fields capture for unexpected bill fields |
+| 2026-09-18 | Added extra_fields to Entry model | Capture unexpected bill fields (Table, Staff, Terminal, Staff, Terminal, etc.) in a generic key/value bucket rather than discarding them |
+| 2026-09-18 | Enhanced status handling | Added statuses for specific missing field scenarios: needs_ticket_number, needs_restaurant, needs_discrepancy_type, needs_review |
+| 2026-09-18 | Added image_filename to Entry model | Store uploaded image filename with each entry for CSV export reference |
+| 2026-09-18 | Retained regex/rule-based parsing over LLM | Bills have semi-structured layouts; rule-based with multiple patterns and graceful degradation is sufficient for MVP and avoids external dependencies |

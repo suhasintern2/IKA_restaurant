@@ -111,6 +111,64 @@
 - [x] CONTEXT.md "Current status"
 
 **Next session should start with:**
--
+- Fix field parsing logic in Division 2 to make it more reliable and schema-flexible
+
+---
+
+### Session 4 — 2026-09-18
+**Planned changes (write this BEFORE touching code):**
+- Fix field parsing logic in Division 2 to make it more reliable and schema-flexible
+- Enhance restaurant name extraction from first lines of OCR text
+- Improve ticket number extraction with multiple patterns and context awareness
+- Attempt to extract description from text when possible
+- Add extra_fields dictionary to Entry model for unexpected bill fields
+- Refine status logic to consider multiple missing field scenarios
+- Update app/models/entry.py with improved parse_extracted_text function
+- Update Entry model to include extra_fields support
+- Verify storage layer works with updated model
+- Test manually against provided example and additional bill variations
+- Update decisions.md with parsing strategy and extra_fields decision
+- Update mvp_spec.md to reflect updated entry schema and any new statuses
+- Update architecture.md if model description needs changing
+- Update frontend_spec.md section 4 if API response shape changed
+- Fix CSV export: store image_filename in entries table for export
+
+**Achieved (write this AFTER the session, even if it differs from planned):**
+- Enhanced parse_extracted_text() in app/models/entry.py with:
+  - Restaurant name extraction from first 1-3 lines of OCR text
+  - Ticket number extraction using multiple patterns (6+ digits, contextual "Ticket #:", "Order #", range formats)
+  - Improved discrepancy type detection with expanded keyword lists and word boundaries
+  - Description extraction by filtering out header/footer/money/date lines
+  - Extra fields capture using regex patterns for "Field: Value" and "Field    Value" formats
+- Added extra_fields (Dict) and image_filename fields to Entry model in app/models/entry.py
+- Updated database schema in app/storage/db.py to include extra_fields (JSON) and image_filename columns
+- Updated upload endpoint to store parsed extra_fields and image_filename with each entry
+- Updated entries API to return extra_fields and image_filename in responses
+- Fixed CSV export to use stored image_filename instead of empty placeholder
+- Added granular status values: needs_ticket_number, needs_restaurant, needs_discrepancy_type, needs_review (in addition to matched, needs_description)
+- Updated determine_status() logic to prioritize missing fields by operator workflow importance
+- Retained regex/rule-based parsing over LLM (recorded in decisions.md) - sufficient for semi-structured bill layouts, avoids external dependencies
+- Verified parsing works correctly against example bill and additional test cases with varying field sets
+- Updated decisions.md with parsing strategy, extra_fields, image_filename, status expansion, and LLM decision
+- Updated mvp_spec.md with extra_fields, image_filename in entry schema, status list, and parsing decision
+- Updated architecture.md with resolved decisions for model extensions, status values, and parsing strategy
+- Updated frontend_spec.md API contract with extra_fields, image_filename, and expanded status values
+
+**Decisions locked this session (must also be in decisions.md):**
+- Enhanced field parsing with schema flexibility (multiple patterns, graceful degradation)
+- Added extra_fields to Entry model for unexpected bill fields
+- Added image_filename to Entry model for CSV export reference
+- Enhanced status values for granular missing-field tracking
+- Retained regex/rule-based parsing over LLM
+
+**Docs updated this session:**
+- [x] mvp_spec.md
+- [x] architecture.md
+- [x] frontend_spec.md
+- [x] decisions.md
+- [x] CONTEXT.md "Current status"
+
+**Next session should start with:**
+- All divisions complete - System ready for integration/testing
 
 ---

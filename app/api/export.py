@@ -44,17 +44,13 @@ async def export_entries_csv(
 
     # Write data rows
     for row in rows:
-        # Note: We don't have the image filename in the entries table yet
-        # This would need to be added to the entries table or we'd need to join with uploads
-        # For now, we'll leave it blank or use a placeholder
-        # In a full implementation, we'd need to store the image filename with each entry
         writer.writerow([
             row['restaurant'] or '',
             row['ticket_number'] or '',
             row['discrepancy_type'] or '',
             row['description'] or '',
             row['status'] or '',
-            ''  # image_filename - would need to be retrieved from uploads table or stored with entry
+            row['image_filename'] or ''  # Use stored image filename
         ])
 
     # Prepare the response
