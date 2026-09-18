@@ -68,3 +68,8 @@ must be prompted to supply one before it's usable.
 | Date | Change | Reason |
 |------|--------|--------|
 | —    | Initial spec created | — |
+| 2026-09-18 | Selected Tesseract OCR for text extraction | Open-source, offline-capable, suitable for messy phone photos, no API costs |
+| 2026-09-18 | Selected SQLite for storage layer | Simple, file-based, zero-configuration, sufficient for MVP |
+| 2026-09-18 | Selected regex/keyword matching for text parsing | Extract ticket number (6+ digits) and discrepancy type (void/discount/promotion keywords); restaurant and description left for user input |
+| 2026-09-18 | Added CSV export functionality with filtering support | Exports filtered/same view as /entries endpoint; exports image filename/path instead of thumbnail |
+| 2026-09-18 | Export image filename/path in CSV (instead of thumbnail) | Thumbnail cannot be exported to CSV; filename/path allows referencing original image |

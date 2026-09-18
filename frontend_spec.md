@@ -45,10 +45,10 @@ Behavior:
 ## 4. API contract (fill in once backend endpoints are finalized)
 | Action | Method | Endpoint | Notes |
 |---|---|---|---|
-| Upload image | POST | `/upload` | TBD payload shape |
-| Get table rows | GET | `/entries` | TBD response shape |
-| Update description | PATCH | `/entries/{id}` | TBD |
-| Export CSV | GET | `/export` | Returns file |
+| Upload image | POST | `/upload` | Returns: {filename, original_filename, extracted_text, entry_id, parsed_data: {restaurant, ticket_number, discrepancy_type, description}} |
+| Get table rows | GET | `/entries` | Returns: List of entries with fields: id, restaurant, ticket_number, discrepancy_type, extracted_text, description, status (matched/unmatched/needs_description) |
+| Update description | PATCH | `/entries/{id}` | Accepts: {description?: string, status?: string}; Returns: updated entry object |
+| Export CSV | GET | `/export` | Returns: CSV file with columns: restaurant, ticket_number, discrepancy_type, description, status, image_filename. Supports same filters as /entries (restaurant, ticket_number). Image filename exported instead of thumbnail. |
 
 ## 5. Changelog
 | Date | Change | Reason |

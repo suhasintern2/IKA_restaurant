@@ -56,7 +56,12 @@ exposes a REST API; frontend consumes it per `frontend_spec.md`.
 | 3. CSV export | `app/api/export.py` |
 
 ## 6. Open decisions (resolve and move into decisions.md)
-- OCR engine/service choice
-- Storage choice (SQLite vs flat JSON vs other)
 - How ticket number / restaurant are identified from extracted text
   (regex? fixed template per restaurant? manual entry fallback?)
+
+## 7. Resolved decisions
+- OCR engine/service choice: Selected Tesseract OCR (recorded in decisions.md)
+- Storage layer: Selected SQLite for MVP (simple, file-based, sufficient)
+- Text parsing approach: Selected regex/keyword matching (extract ticket # and discrepancy type)
+- CSV export functionality: Selected GET /export endpoint with filtering support (restaurant, ticket_number)
+- CSV image representation: Selected to export stored image filename/path instead of thumbnail
