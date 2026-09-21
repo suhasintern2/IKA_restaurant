@@ -23,9 +23,9 @@ description, the system must prompt for one.
 > Update this section at the end of every session. This is the fastest way
 > for the next session to know where things stand.
 
-- Phase: **All Divisions Complete - System ready for integration/testing**
-- Last session: 2026-09-18 - Fixed field parsing logic (Division 2), enhanced schema flexibility with extra_fields, added granular statuses, fixed CSV export with image_filename
-- Next up: All divisions complete - System ready for integration/testing
+- Phase: **Frontend MVP implemented; backend contract confirmation pending**
+- Last session: Session 3 — 2026-09-21
+- Next up: Confirm `/upload` response shape, canonical restaurant names, and filtered export behavior with the backend team.
 
 ## Golden rule for every session
 1. Before writing any code: write a "Planned changes" entry in `session_log.md`.

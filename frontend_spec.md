@@ -45,15 +45,25 @@ Behavior:
 ## 4. API contract (fill in once backend endpoints are finalized)
 | Action | Method | Endpoint | Notes |
 |---|---|---|---|
-| Upload image | POST | `/upload` | Multipart form: `file` (image), `restaurant` (optional string - one of 3 restaurants, overrides OCR extraction). Returns: {filename, original_filename, extracted_text, entry_id, parsed_data: {restaurant, ticket_number, discrepancy_type, description, extra_fields}} |
-| Get table rows | GET | `/entries` | Returns: List of entries with fields: id, restaurant, ticket_number, discrepancy_type, extracted_text, description, status (matched/needs_description/needs_ticket_number/needs_restaurant/needs_discrepancy_type/needs_review), extra_fields (dict), image_filename |
-| Update description | PATCH | `/entries/{id}` | Accepts: {description?: string, status?: string}; Returns: updated entry object |
-| Export CSV | GET | `/export` | Returns: CSV file with columns: restaurant, ticket_number, discrepancy_type, description, status, image_filename. Supports same filters as /entries (restaurant, ticket_number). Image filename exported instead of thumbnail. |
+| Upload image | POST | `/upload` | TBD payload shape |
+| Get table rows | GET | `/entries` | TBD response shape |
+| Update description | PATCH | `/entries/{id}` | TBD |
+| Export CSV | GET | `/export` | Returns file |
+
+### Current frontend integration notes
+- The API contract remains partially TBD. The frontend currently assumes
+  `/upload` accepts a multipart field named `files` and returns either one
+  entry object or an array of entry objects. Backend confirmation is required.
+- The frontend sends one request per selected image so each image can show its
+  own pending, success, or failure state. This assumes the backend accepts a
+  single file in the same `files` field.
+- `/entries` is assumed to return an array with `id`, `restaurant`,
+  `ticket_number`, `discrepancy_type`, `thumbnail`, `description`, and `status`.
+- `/export` currently exports the backend dataset because the endpoint has no
+  documented filter parameters. Filtered-export behavior needs confirmation.
 
 ## 5. Changelog
 | Date | Change | Reason |
 |------|--------|--------|
 | —    | Initial spec created | — |
-| 2026-09-18 | Added extra_fields to API response | Capture unexpected bill fields (Table, Staff, Terminal, etc.) |
-| 2026-09-18 | Added image_filename to API response | Store uploaded image filename for CSV export reference |
-| 2026-09-18 | Expanded status values | Added needs_ticket_number, needs_restaurant, needs_discrepancy_type, needs_review for granular missing-field tracking |
+| 2026-09-21 | Added frontend integration notes for upload and export behavior | Keep the UI contract honest while backend response shapes remain TBD |
