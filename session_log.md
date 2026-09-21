@@ -13,6 +13,37 @@
 -
 
 **Achieved (write this AFTER the session, even if it differs from planned):**
+- Added per-image upload feedback with uploading, success, and error states.
+- Kept the upload, table, filtering, search, description prompt, and CSV export MVP flow intact.
+- Removed non-MVP summary metrics from the dashboard.
+- Documented the unresolved API response assumptions and export behavior in frontend_spec.md.
+- Recorded placeholder restaurant names and the per-image upload decision in decisions.md.
+- Updated CONTEXT.md to show the actual frontend MVP status.
+- Validated with npm run build and npm run lint; build passed and lint reports only the existing setState-in-effect warning.
+
+**Decisions locked this session (must also be in decisions.md):**
+- Placeholder restaurant options are Restaurant A, Restaurant B, and Restaurant C until backend names are confirmed.
+- Each selected image is uploaded in its own POST /upload request for per-image status feedback.
+- Export CSV currently downloads the backend dataset because filtered export parameters are undocumented.
+
+**Docs updated this session:**
+- [ ] mvp_spec.md
+- [ ] architecture.md
+- [x] frontend_spec.md
+- [x] decisions.md
+- [x] CONTEXT.md "Current status"
+
+**Next session should start with:**
+- Confirm the real backend upload payload/response shape, canonical restaurant names, and whether `/export` supports filtered results.
+
+## Session 3 — 2026-09-21
+**Planned changes (write this BEFORE touching code):**
+- Complete the frontend MVP process requirements and document the work.
+- Add per-image upload progress and success/failure feedback.
+- Record API contract assumptions and UI decisions in the project docs.
+- Update the project current status and finish the session achievement entry.
+
+**Achieved (write this AFTER the session, even if it differs from planned):**
 -
 
 **Decisions locked this session (must also be in decisions.md):**

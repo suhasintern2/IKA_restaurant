@@ -10,6 +10,7 @@ function App() {
   const [error, setError] = useState(null);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
+  const [uploadItems, setUploadItems] = useState([]);
   const [selectedEntryId, setSelectedEntryId] = useState(null);
   const [editDescription, setEditDescription] = useState('');
   const [descriptionPromptOpen, setDescriptionPromptOpen] = useState(false);
@@ -39,26 +40,39 @@ function App() {
   const handleUpload = async (files) => {
     setUploadLoading(true);
     setUploadError(null);
-    const formData = new FormData();
-    for (const file of files) {
-      formData.append('files', file);
-    }
-    try {
-      const response = await fetch('/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.status}`);
+    const items = files.map((file, index) => ({
+      id: `${file.name}-${file.lastModified}-${index}`,
+      name: file.name,
+      status: 'uploading',
+      message: 'Uploading image...'
+    }));
+    setUploadItems(items);
+
+    for (const [index, file] of files.entries()) {
+      const itemId = items[index].id;
+      try {
+        const formData = new FormData();
+        formData.append('files', file);
+        const response = await fetch('/upload', { method: 'POST', body: formData });
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.status}`);
+        }
+        const data = await response.json();
+        const uploadedEntries = Array.isArray(data) ? data : [data];
+        setEntries(prev => [...prev, ...uploadedEntries]);
+        setUploadItems(prev => prev.map(item => item.id === itemId
+          ? { ...item, status: 'success', message: 'Uploaded successfully' }
+          : item
+        ));
+      } catch (err) {
+        setUploadItems(prev => prev.map(item => item.id === itemId
+          ? { ...item, status: 'error', message: err.message }
+          : item
+        ));
+        setUploadError('One or more images could not be uploaded.');
       }
-      // Assuming the response returns the uploaded entries
-      const data = await response.json();
-      setEntries(prev => [...prev, ...data]); // Append new entries
-    } catch (err) {
-      setUploadError(err.message);
-    } finally {
-      setUploadLoading(false);
     }
+    setUploadLoading(false);
   };
 
   // Update description of an entry
@@ -144,10 +158,29 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>TIL SYSTEM</h1>
+        <div className="brand-lockup">
+          <div className="brand-mark">T</div>
+          <div>
+            <p className="eyebrow">Restaurant operations</p>
+            <h1>TIL System</h1>
+          </div>
+        </div>
+        <div className="header-meta">
+          <span className="live-dot" />
+          <span>Workspace active</span>
+        </div>
       </header>
-      <main>
-        {!loading && entries.length === 0 && uploadLoading === 0 ? (
+      <main className="app-main">
+        <section className="welcome-row">
+          <div>
+            <p className="eyebrow">Daily reconciliation</p>
+            <h2>Keep every bill accounted for.</h2>
+            <p className="welcome-copy">Review discrepancies, add context, and keep your restaurant records moving.</p>
+          </div>
+          <div className="date-chip">Today <strong>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</strong></div>
+        </section>
+
+        {!loading && entries.length === 0 && !uploadLoading ? (
           <p className="empty-state">No bills uploaded yet. Upload images to get started.</p>
         ) : null}
         {loading && entries.length === 0 ? (
@@ -156,9 +189,23 @@ function App() {
         {error && entries.length === 0 ? (
           <p className="error-state">Error: {error}</p>
         ) : null}
-        <div className="upload-section">
-          <h2>Upload Bill Images</h2>
+        <section className="upload-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Start here</p>
+              <h2>Upload bill images</h2>
+            </div>
+            <span className="section-icon">↑</span>
+          </div>
+          <label className="upload-dropzone" htmlFor="bill-upload">
+            <span className="upload-icon">＋</span>
+            <span className="upload-title">Choose bill images</span>
+            <span className="upload-hint">PNG, JPG or WEBP · Multiple files welcome</span>
+            <span className="upload-button">Browse files</span>
+          </label>
           <input
+            id="bill-upload"
+            className="file-picker"
             type="file"
             accept="image/*"
             multiple
@@ -173,40 +220,48 @@ function App() {
           />
           {uploadLoading && <p className="upload-progress">Uploading...</p>}
           {uploadError && <p className="upload-error">Upload error: {uploadError}</p>}
-        </div>
-        <div className="table-section">
-          <h2>Bill Entries</h2>
+          {uploadItems.length > 0 && (
+            <div className="upload-status-list" aria-live="polite">
+              {uploadItems.map(item => (
+                <div className={`upload-status-item ${item.status}`} key={item.id}>
+                  <span className="upload-status-icon">{item.status === 'uploading' ? '...' : item.status === 'success' ? 'OK' : '!'}</span>
+                  <span className="upload-file-name">{item.name}</span>
+                  <span className="upload-file-message">{item.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+        <section className="table-section">
+          <div className="section-heading table-heading">
+            <div>
+              <p className="eyebrow">Your workspace</p>
+              <h2>Bill entries <span className="entry-count">{filteredEntries.length}</span></h2>
+            </div>
+            <button className="export-button" onClick={handleExportCSV} disabled={loading || entries.length === 0}>
+              <span>↓</span> Export CSV
+            </button>
+          </div>
           <div className="toolbar">
             <div className="filter-search">
-              <label htmlFor="restaurant-filter">Restaurant:</label>
-              <select
-                id="restaurant-filter"
-                value={filterRestaurant}
-                onChange={(e) => setFilterRestaurant(e.target.value)}
-              >
-                <option value="all">All</option>
-                {RESTAURANTS.map(rest => <option key={rest} value={rest}>{rest}</option>)}
-              </select>
-              <label htmlFor="ticket-search">Ticket #:</label>
-              <input
-                id="ticket-search"
-                type="text"
-                value={searchTicket}
-                onChange={(e) => setSearchTicket(e.target.value)}
-                placeholder="Search ticket number"
-              />
+              <div className="field-wrap">
+                <label htmlFor="restaurant-filter">Restaurant</label>
+                <select id="restaurant-filter" value={filterRestaurant} onChange={(e) => setFilterRestaurant(e.target.value)}>
+                  <option value="all">All restaurants</option>
+                  {RESTAURANTS.map(rest => <option key={rest} value={rest}>{rest}</option>)}
+                </select>
+              </div>
+              <div className="field-wrap search-wrap">
+                <label htmlFor="ticket-search">Search</label>
+                <input id="ticket-search" type="text" value={searchTicket} onChange={(e) => setSearchTicket(e.target.value)} placeholder="Ticket number" />
+              </div>
             </div>
-            <button
-              onClick={handleExportCSV}
-              disabled={loading || entries.length === 0}
-            >
-              Export CSV
-            </button>
           </div>
           {loading && entries.length > 0 ? (
             <p className="loading-state">Updating entries...</p>
           ) : null}
-          <table className="entries-table">
+          <div className="table-scroll">
+            <table className="entries-table">
             <thead>
               <tr>
                 <th>Restaurant</th>
@@ -269,8 +324,9 @@ function App() {
                 ))
               )}
             </tbody>
-          </table>
-        </div>
+            </table>
+          </div>
+        </section>
       </main>
       {/* Description Prompt Modal */}
       {descriptionPromptOpen && selectedEntryId !== null && (

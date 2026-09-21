@@ -50,7 +50,20 @@ Behavior:
 | Update description | PATCH | `/entries/{id}` | TBD |
 | Export CSV | GET | `/export` | Returns file |
 
+### Current frontend integration notes
+- The API contract remains partially TBD. The frontend currently assumes
+  `/upload` accepts a multipart field named `files` and returns either one
+  entry object or an array of entry objects. Backend confirmation is required.
+- The frontend sends one request per selected image so each image can show its
+  own pending, success, or failure state. This assumes the backend accepts a
+  single file in the same `files` field.
+- `/entries` is assumed to return an array with `id`, `restaurant`,
+  `ticket_number`, `discrepancy_type`, `thumbnail`, `description`, and `status`.
+- `/export` currently exports the backend dataset because the endpoint has no
+  documented filter parameters. Filtered-export behavior needs confirmation.
+
 ## 5. Changelog
 | Date | Change | Reason |
 |------|--------|--------|
 | —    | Initial spec created | — |
+| 2026-09-21 | Added frontend integration notes for upload and export behavior | Keep the UI contract honest while backend response shapes remain TBD |
