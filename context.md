@@ -23,9 +23,11 @@ description, the system must prompt for one.
 > Update this section at the end of every session. This is the fastest way
 > for the next session to know where things stand.
 
-- Phase: **Frontend MVP implemented; backend contract confirmation pending**
-- Last session: Session 3 — 2026-09-21
-- Next up: Confirm `/upload` response shape, canonical restaurant names, and filtered export behavior with the backend team.
+- Phase: **Clean dedicated ticket/docket schemas with collapsed Show data UI**
+- Last session: Session 17 — 2026-09-22
+- Next up: User should visually confirm the prominent Ticket ID and Uploaded
+   columns in the running frontend; real-image acceptance results are recorded
+   in `session_log.md`.
 
 ## Golden rule for every session
 1. Before writing any code: write a "Planned changes" entry in `session_log.md`.
