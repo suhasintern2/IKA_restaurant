@@ -1,159 +1,212 @@
 import { useState, useEffect } from 'react';
 import './App.css';
+import { uploadTicketScreenshotBatch, uploadDocketImageBatch } from './api/upload';
+import { exportDockets, exportTickets, getDockets, getTickets } from './api/records';
 
-// We'll define the three restaurant names as per the spec (we don't know the actual names, so we'll use placeholders)
-const RESTAURANTS = ['Restaurant A', 'Restaurant B', 'Restaurant C'];
-
+// Fallback options shown only while the table is empty; real options are
+// derived from the restaurant values the backend actually returns.
 function App() {
-  const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [uploadLoading, setUploadLoading] = useState(false);
-  const [uploadError, setUploadError] = useState(null);
-  const [uploadItems, setUploadItems] = useState([]);
-  const [selectedEntryId, setSelectedEntryId] = useState(null);
-  const [editDescription, setEditDescription] = useState('');
-  const [descriptionPromptOpen, setDescriptionPromptOpen] = useState(false);
-  const [filterRestaurant, setFilterRestaurant] = useState('all');
-  const [searchTicket, setSearchTicket] = useState('');
+  const [ticketUploadLoading, setTicketUploadLoading] = useState(false);
+  const [ticketUploadError, setTicketUploadError] = useState(null);
+  const [ticketUploadItems, setTicketUploadItems] = useState([]);
+  const [showTicketData, setShowTicketData] = useState(false);
+  const [ticketUploadData, setTicketUploadData] = useState([]);
+  const [docketUploadLoading, setDocketUploadLoading] = useState(false);
+  const [docketUploadError, setDocketUploadError] = useState(null);
+  const [docketUploadItems, setDocketUploadItems] = useState([]);
+  const [showDocketData, setShowDocketData] = useState(false);
+  const [docketUploadData, setDocketUploadData] = useState([]);
+  const activeView = 'tickets';
+  const [tickets, setTickets] = useState([]);
+  const [dockets, setDockets] = useState([]);
+  const [selectedRestaurant, setSelectedRestaurant] = useState('');
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState(null);
 
-  // Fetch entries from the backend
-  const fetchEntries = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch('/entries');
-      if (!response.ok) {
-        throw new Error(`Failed to fetch entries: ${response.status}`);
-      }
-      const data = await response.json();
-      setEntries(data);
-    } catch (err) {
-      setError(err.message);
-      setEntries([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    let cancelled = false;
+    setRecordsLoading(true);
+    setRecordsError(null);
+    Promise.all([getTickets(), getDockets()])
+      .then(([ticketData, docketData]) => {
+        if (cancelled) return;
+        setTickets(ticketData);
+        setDockets(docketData);
+      })
+      .catch((err) => {
+        if (!cancelled) setRecordsError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setRecordsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
-  // Upload images
-  const handleUpload = async (files) => {
-    setUploadLoading(true);
-    setUploadError(null);
+  const handleTicketScreenshotUpload = async (files) => {
+    setTicketUploadLoading(true);
+    setTicketUploadError(null);
     const items = files.map((file, index) => ({
       id: `${file.name}-${file.lastModified}-${index}`,
       name: file.name,
       status: 'uploading',
-      message: 'Uploading image...'
+      message: 'Parsing ticket screenshots...'
     }));
-    setUploadItems(items);
+    setTicketUploadItems(items);
 
-    for (const [index, file] of files.entries()) {
-      const itemId = items[index].id;
-      try {
-        const formData = new FormData();
-        formData.append('files', file);
-        const response = await fetch('/upload', { method: 'POST', body: formData });
-        if (!response.ok) {
-          throw new Error(`Upload failed: ${response.status}`);
-        }
-        const data = await response.json();
-        const uploadedEntries = Array.isArray(data) ? data : [data];
-        setEntries(prev => [...prev, ...uploadedEntries]);
-        setUploadItems(prev => prev.map(item => item.id === itemId
-          ? { ...item, status: 'success', message: 'Uploaded successfully' }
-          : item
-        ));
-      } catch (err) {
-        setUploadItems(prev => prev.map(item => item.id === itemId
-          ? { ...item, status: 'error', message: err.message }
-          : item
-        ));
-        setUploadError('One or more images could not be uploaded.');
-      }
-    }
-    setUploadLoading(false);
-  };
-
-  // Update description of an entry
-  const handleDescriptionSave = async () => {
-    if (selectedEntryId === null) return;
     try {
-      const response = await fetch(`/entries/${selectedEntryId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ description: editDescription }),
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to save description: ${response.status}`);
-      }
-      const updatedEntry = await response.json();
-      // Update the entry in our state
-      setEntries(prev =>
-        prev.map(entry =>
-          entry.id === updatedEntry.id ? updatedEntry : entry
-        )
+      const result = await uploadTicketScreenshotBatch(files);
+      const failed = result.failed || [];
+      const succeeded = result.succeeded || [];
+
+      setTicketUploadItems(
+        files.map((file, index) => {
+          const failedItem = failed.find((item) => item.filename === file.name || item.original_filename === file.name);
+          const successItem = succeeded.find((item) => item.original_filename === file.name);
+          if (failedItem) {
+            return { id: `${file.name}-${file.lastModified}-${index}`, name: file.name, status: 'error', message: failedItem.reason };
+          }
+          if (successItem) {
+            return { id: `${file.name}-${file.lastModified}-${index}`, name: file.name, status: 'success', message: 'Saved successfully' };
+          }
+          return { id: `${file.name}-${file.lastModified}-${index}`, name: file.name, status: 'uploading', message: 'Queued' };
+        })
       );
-      setDescriptionPromptOpen(false);
-      setSelectedEntryId(null);
-      setEditDescription('');
-    } catch (err) {
-      alert(`Error saving description: ${err.message}`);
-    }
-  };
-
-  // Export CSV
-  const handleExportCSV = async () => {
-    try {
-      const response = await fetch('/export');
-      if (!response.ok) {
-        throw new Error(`Export failed: ${response.status}`);
+      if (failed.length > 0) {
+        setTicketUploadError(`Some ticket screenshots failed: ${failed.map((item) => item.filename).join(', ')}`);
       }
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'til_entries.csv';
-      a.click();
-      window.URL.revokeObjectURL(url);
+      const refreshedTickets = await getTickets();
+      setTickets(refreshedTickets);
+      setTicketUploadData(refreshedTickets);
+      setShowTicketData(true);
     } catch (err) {
-      alert(`Error exporting CSV: ${err.message}`);
+      setTicketUploadItems(prev => prev.map(item => ({ ...item, status: 'error', message: err.message })));
+      setTicketUploadError(err.message);
+    } finally {
+      setTicketUploadLoading(false);
     }
   };
 
-  // Load entries on component mount
-  useEffect(() => {
-    fetchEntries();
-  }, []);
+  const handleDocketUpload = async (files) => {
+    setDocketUploadLoading(true);
+    setDocketUploadError(null);
+    const items = files.map((file, index) => ({
+      id: `${file.name}-${file.lastModified}-${index}`,
+      name: file.name,
+      status: 'uploading',
+      message: 'Saving docket batch...'
+    }));
+    setDocketUploadItems(items);
 
-  // Filter entries based on restaurant and ticket number search
-  const filteredEntries = entries.filter(entry => {
-    const matchesRestaurant =
-      filterRestaurant === 'all' || entry.restaurant === filterRestaurant;
-    const matchesTicket = entry.ticket_number
-      .toLowerCase()
-      .includes(searchTicket.toLowerCase());
-    return matchesRestaurant && matchesTicket;
-  });
+    try {
+      const result = await uploadDocketImageBatch(files);
+      const failed = result.failed || [];
+      const succeeded = result.succeeded || [];
 
-  // Determine if any row needs description (for visual flagging)
-  const getRowStatus = (entry) => {
-    if (!entry.description || entry.description.trim() === '') {
-      return 'needs-description';
+      setDocketUploadItems(
+        files.map((file, index) => {
+          const failedItem = failed.find((item) => item.filename === file.name || item.original_filename === file.name);
+          const successItem = succeeded.find((item) => item.original_filename === file.name);
+          if (failedItem) {
+            return { id: `${file.name}-${file.lastModified}-${index}`, name: file.name, status: 'error', message: failedItem.reason };
+          }
+          if (successItem) {
+            return { id: `${file.name}-${file.lastModified}-${index}`, name: file.name, status: 'success', message: 'Saved successfully' };
+          }
+          return { id: `${file.name}-${file.lastModified}-${index}`, name: file.name, status: 'uploading', message: 'Queued' };
+        })
+      );
+      if (failed.length > 0) {
+        setDocketUploadError(`Some dockets failed to save: ${failed.map((item) => item.filename).join(', ')}`);
+      }
+      const refreshedDockets = await getDockets();
+      setDockets(refreshedDockets);
+      setDocketUploadData(refreshedDockets);
+      setShowDocketData(true);
+    } catch (err) {
+      setDocketUploadItems(prev => prev.map(item => ({ ...item, status: 'error', message: err.message })));
+      setDocketUploadError(err.message);
+    } finally {
+      setDocketUploadLoading(false);
     }
-    return entry.status.toLowerCase().includes('matched')
-      ? 'matched'
-      : 'unmatched';
   };
 
-  // Open description prompt for an entry
-  const openDescriptionPrompt = (entry) => {
-    setSelectedEntryId(entry.id);
-    setEditDescription(entry.description || '');
-    setDescriptionPromptOpen(true);
+  const handleRecordsExport = async (view) => {
+    try {
+      if (view === 'tickets') await exportTickets();
+      if (view === 'dockets') await exportDockets();
+    } catch (err) {
+      alert(`Error exporting parsed data: ${err.message}`);
+    }
   };
+
+  const recordRows = activeView === 'tickets' ? tickets : dockets;
+  const restaurantOptions = [...new Set(tickets.map((ticket) => ticket.restaurant).filter(Boolean))].sort();
+  const filteredTickets = selectedRestaurant
+    ? tickets.filter((ticket) => ticket.restaurant === selectedRestaurant)
+    : [];
+
+  const requireRestaurant = () => {
+    if (!selectedRestaurant) {
+      setTicketUploadError('Select a restaurant before uploading ticket screenshots.');
+      return false;
+    }
+    return true;
+  };
+
+  const matchingDockets = selectedTicket
+    ? dockets.filter((docket) => String(docket.order_number || '') === String(selectedTicket.ticket_id || '').match(/(\d+)$/)?.[1])
+    : [];
+  const selectedVoidItems = selectedTicket?.items?.filter((item) => item.is_void) || [];
+  const comparisonMismatch = selectedTicket && (
+    selectedVoidItems.length > 0 && matchingDockets.length === 0
+    || matchingDockets.some((docket) => docket.discrepancy_type !== 'void')
+  );
+
+  const renderTicketTable = (rows, label) => (
+    <div className="upload-data-table">
+      <p className="eyebrow">{label}</p>
+      <div className="table-scroll">
+        <table className="entries-table parsed-table">
+          <thead><tr>
+            <th className="ticket-id-header">Ticket Number</th><th>Uploaded</th><th>Restaurant</th><th>Date</th><th>Terminal</th>
+            <th>Table</th><th>Department</th><th>User</th><th>Payment Status</th><th>Credit Card Amount</th><th>Items</th><th>Ticket Total</th><th>Grand Total</th><th>Charged</th>
+          </tr></thead>
+          <tbody>
+            {rows.length === 0 ? <tr><td colSpan="14" className="empty-table">No parsed ticket screenshots yet.</td></tr> : rows.map((ticket) => (
+              <tr key={ticket.ticket_id} className={`ticket-select-row ${selectedTicket?.ticket_id === ticket.ticket_id ? 'selected-ticket-row' : ''}`} onClick={() => setSelectedTicket(ticket)} tabIndex="0" onKeyDown={(event) => { if (event.key === 'Enter') setSelectedTicket(ticket); }}>
+                <td className="ticket-id-cell"><strong>{ticket.ticket_id || 'Missing ticket ID'}</strong></td>
+                <td>{ticket.uploaded_at ? new Date(`${ticket.uploaded_at}Z`).toLocaleString() : '—'}</td>
+                <td>{ticket.restaurant || '—'}</td><td>{ticket.date || '—'}</td><td>{ticket.terminal || '—'}</td><td>{ticket.table || '—'}</td>
+                <td>{ticket.department || '—'}</td><td>{ticket.user || '—'}</td><td>{ticket.payment_status || '—'}</td><td>{ticket.credit_card_amount || '—'}</td>
+                <td>{ticket.items?.length ? `${ticket.items.length} item${ticket.items.length === 1 ? '' : 's'}` : '—'}</td>
+                <td>{ticket.ticket_total || '—'}</td><td>{ticket.grand_total || '—'}</td><td>{ticket.charged || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const renderDocketTable = (rows, label) => (
+    <div className="upload-data-table">
+      <p className="eyebrow">{label}</p>
+      <div className="table-scroll">
+        <table className="entries-table parsed-table">
+          <thead><tr><th>Order No</th><th>Date</th><th>Time</th><th>Item</th><th>Discrepancy Type</th><th>Handwritten Reason</th></tr></thead>
+          <tbody>
+            {rows.length === 0 ? <tr><td colSpan="6" className="empty-table">No parsed dockets yet.</td></tr> : rows.map((docket) => (
+              <tr key={docket.id} className={docket.review_required ? 'parsed-review-row' : ''}>
+                <td><strong>{docket.order_number || '—'}</strong></td><td>{docket.date || '—'}</td><td>{docket.time || '—'}</td><td>{docket.item || '—'}</td>
+                <td><span className={`badge badge-${docket.discrepancy_type || 'unknown'}`}>{docket.discrepancy_type || 'unknown'}</span></td><td className="handwritten-cell">{docket.description || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 
   return (
     <div className="app">
@@ -180,203 +233,197 @@ function App() {
           <div className="date-chip">Today <strong>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</strong></div>
         </section>
 
-        {!loading && entries.length === 0 && !uploadLoading ? (
-          <p className="empty-state">No bills uploaded yet. Upload images to get started.</p>
-        ) : null}
-        {loading && entries.length === 0 ? (
-          <p className="loading-state">Loading entries...</p>
-        ) : null}
-        {error && entries.length === 0 ? (
-          <p className="error-state">Error: {error}</p>
-        ) : null}
-        <section className="upload-section">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Start here</p>
-              <h2>Upload bill images</h2>
-            </div>
-            <span className="section-icon">↑</span>
+        <>
+
+        <section className="restaurant-filter-section">
+          <div>
+            <p className="eyebrow">Step 1</p>
+            <h2>Choose a restaurant</h2>
+            <p className="filter-copy">Select the restaurant for this working day before adding screenshots and docket images.</p>
           </div>
-          <label className="upload-dropzone" htmlFor="bill-upload">
-            <span className="upload-icon">＋</span>
-            <span className="upload-title">Choose bill images</span>
-            <span className="upload-hint">PNG, JPG or WEBP · Multiple files welcome</span>
-            <span className="upload-button">Browse files</span>
+          <label className="restaurant-filter-field">
+            <span>Restaurant</span>
+            <select value={selectedRestaurant} onChange={(event) => setSelectedRestaurant(event.target.value)}>
+              <option value="">Select a restaurant</option>
+              {restaurantOptions.map((restaurant) => <option key={restaurant} value={restaurant}>{restaurant}</option>)}
+            </select>
           </label>
-          <input
-            id="bill-upload"
-            className="file-picker"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={(e) => {
-              const files = Array.from(e.target.files);
-              if (files.length > 0) {
-                handleUpload(files);
-                e.target.value = ''; // Reset input
-              }
-            }}
-            disabled={uploadLoading}
-          />
-          {uploadLoading && <p className="upload-progress">Uploading...</p>}
-          {uploadError && <p className="upload-error">Upload error: {uploadError}</p>}
-          {uploadItems.length > 0 && (
-            <div className="upload-status-list" aria-live="polite">
-              {uploadItems.map(item => (
-                <div className={`upload-status-item ${item.status}`} key={item.id}>
-                  <span className="upload-status-icon">{item.status === 'uploading' ? '...' : item.status === 'success' ? 'OK' : '!'}</span>
-                  <span className="upload-file-name">{item.name}</span>
-                  <span className="upload-file-message">{item.message}</span>
-                </div>
-              ))}
-            </div>
-          )}
         </section>
-        <section className="table-section">
+
+        <section className="bulk-upload-grid">
+          <div className="upload-section bulk-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Ticket screenshots</p>
+                <h2>Upload screenshots in bulk</h2>
+              </div>
+              <span className="section-icon">IMG</span>
+            </div>
+            <label className={`upload-dropzone ${!selectedRestaurant ? 'upload-disabled' : ''}`} htmlFor="ticket-screenshot-upload">
+              <span className="upload-icon">＋</span>
+              <span className="upload-title">Select ticket screenshots</span>
+              <span className="upload-hint">PNG, JPG or WEBP · Up to 30 screenshots</span>
+              <span className="upload-button">Browse screenshots</span>
+            </label>
+            <input
+              id="ticket-screenshot-upload"
+              className="file-picker"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files);
+                if (files.length > 0 && requireRestaurant()) {
+                  handleTicketScreenshotUpload(files);
+                  e.target.value = '';
+                }
+              }}
+              disabled={ticketUploadLoading || !selectedRestaurant}
+            />
+            {ticketUploadLoading && <p className="upload-progress">Parsing ticket screenshots...</p>}
+            {ticketUploadError && <p className="upload-error">{ticketUploadError}</p>}
+            {ticketUploadItems.length > 0 && (
+              <div className="upload-status-list" aria-live="polite">
+                {ticketUploadItems.map(item => (
+                  <div className={`upload-status-item ${item.status}`} key={item.id}>
+                    <span className="upload-status-icon">{item.status === 'uploading' ? '...' : item.status === 'success' ? 'OK' : '!'}</span>
+                    <span className="upload-file-name">{item.name}</span>
+                    <span className="upload-file-message">{item.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {ticketUploadItems.some((item) => item.status === 'success') && (
+              <button className="show-data-button" onClick={() => setShowTicketData((visible) => !visible)}>
+                {showTicketData ? 'Hide data' : 'Show data'}
+              </button>
+            )}
+            {showTicketData && ticketUploadData.filter((ticket) => ticket.restaurant === selectedRestaurant).length > 0 && renderTicketTable(ticketUploadData.filter((ticket) => ticket.restaurant === selectedRestaurant), 'Uploaded ticket data')}
+          </div>
+
+          <div className="upload-section bulk-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Bulk docket</p>
+                <h2>Discrepancy images</h2>
+              </div>
+              <span className="section-icon">IMG</span>
+            </div>
+            <label className={`upload-dropzone ${!selectedRestaurant ? 'upload-disabled' : ''}`} htmlFor="docket-upload">
+              <span className="upload-icon">＋</span>
+              <span className="upload-title">Choose docket batch</span>
+              <span className="upload-hint">PNG, JPG or WEBP · Up to 30 images</span>
+              <span className="upload-button">Browse images</span>
+            </label>
+            <input
+              id="docket-upload"
+              className="file-picker"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files);
+                if (files.length > 0 && requireRestaurant()) {
+                  handleDocketUpload(files);
+                  e.target.value = '';
+                }
+              }}
+              disabled={docketUploadLoading || !selectedRestaurant}
+            />
+            {docketUploadLoading && <p className="upload-progress">Saving dockets...</p>}
+            {docketUploadError && <p className="upload-error">{docketUploadError}</p>}
+            {docketUploadItems.length > 0 && (
+              <div className="upload-status-list" aria-live="polite">
+                {docketUploadItems.map(item => (
+                  <div className={`upload-status-item ${item.status}`} key={item.id}>
+                    <span className="upload-status-icon">{item.status === 'uploading' ? '...' : item.status === 'success' ? 'OK' : '!'}</span>
+                    <span className="upload-file-name">{item.name}</span>
+                    <span className="upload-file-message">{item.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {docketUploadItems.some((item) => item.status === 'success') && (
+              <button className="show-data-button" onClick={() => {
+                setShowDocketData((visible) => !visible);
+              }}>
+                {showDocketData ? 'Hide data' : 'Show data'}
+              </button>
+            )}
+            {showDocketData && docketUploadData.length > 0 && selectedRestaurant && renderDocketTable(docketUploadData, 'Uploaded docket data')}
+          </div>
+        </section>
+        <section id="records-section" className="parsed-record-section">
           <div className="section-heading table-heading">
             <div>
-              <p className="eyebrow">Your workspace</p>
-              <h2>Bill entries <span className="entry-count">{filteredEntries.length}</span></h2>
+              <p className="eyebrow">Parsed data</p>
+              <h2>Tickets and dockets <span className="entry-count">{tickets.length + dockets.length}</span></h2>
             </div>
-            <button className="export-button" onClick={handleExportCSV} disabled={loading || entries.length === 0}>
-              <span>↓</span> Export CSV
+            <button className="export-button" onClick={() => handleRecordsExport(activeView)} disabled={recordsLoading || recordRows.length === 0}>
+              <span>↓</span> Export {activeView === 'tickets' ? 'tickets' : 'dockets'} CSV
             </button>
           </div>
-          <div className="toolbar">
-            <div className="filter-search">
-              <div className="field-wrap">
-                <label htmlFor="restaurant-filter">Restaurant</label>
-                <select id="restaurant-filter" value={filterRestaurant} onChange={(e) => setFilterRestaurant(e.target.value)}>
-                  <option value="all">All restaurants</option>
-                  {RESTAURANTS.map(rest => <option key={rest} value={rest}>{rest}</option>)}
-                </select>
-              </div>
-              <div className="field-wrap search-wrap">
-                <label htmlFor="ticket-search">Search</label>
-                <input id="ticket-search" type="text" value={searchTicket} onChange={(e) => setSearchTicket(e.target.value)} placeholder="Ticket number" />
-              </div>
-            </div>
-          </div>
-          {loading && entries.length > 0 ? (
-            <p className="loading-state">Updating entries...</p>
-          ) : null}
-          <div className="table-scroll">
-            <table className="entries-table">
-            <thead>
-              <tr>
-                <th>Restaurant</th>
-                <th>Ticket Number</th>
-                <th>Discrepancy Type</th>
-                <th>Thumbnail</th>
-                <th>Description</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEntries.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="empty-table">
-                    No entries match the current filters.
-                  </td>
-                </tr>
-              ) : (
-                filteredEntries.map((entry) => (
-                  <tr
-                    key={entry.id}
-                    className={`entry-row ${getRowStatus(entry)}`}
-                    onClick={
-                      !entry.description || entry.description.trim() === ''
-                        ? () => openDescriptionPrompt(entry)
-                        : undefined
-                    }
-                  >
-                    <td>{entry.restaurant}</td>
-                    <td>{entry.ticket_number}</td>
-                    <td>
-                      <span className={`badge badge-${entry.discrepancy_type}`}>
-                        {entry.discrepancy_type}
-                      </span>
-                    </td>
-                    <td>
-                      {entry.thumbnail ? (
-                        <img
-                          src={entry.thumbnail}
-                          alt={`Thumbnail of ${entry.ticket_number}`}
-                          className="thumbnail"
-                        />
-                      ) : (
-                        <span className="no-thumbnail">No image</span>
-                      )}
-                    </td>
-                    <td className="description-cell">
-                      {entry.description || (
-                        <span className="missing-description">
-                          Click to add description
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      <span className={`status-badge ${getRowStatus(entry)}`}>
-                        {entry.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-            </table>
+          {recordsLoading && <p className="loading-state">Loading parsed {activeView}...</p>}
+          {recordsError && <p className="error-state">Error: {recordsError}</p>}
+          <div className="combined-record-tables">
+            {renderTicketTable(filteredTickets, 'Ticket screenshots data')}
           </div>
         </section>
-      </main>
-      {/* Description Prompt Modal */}
-      {descriptionPromptOpen && selectedEntryId !== null && (
-        <div className="modal-backdrop" onClick={() => {
-          setDescriptionPromptOpen(false);
-          setSelectedEntryId(null);
-          setEditDescription('');
-        }}>
-          <div className="modal-content">
-            <h2>Add Description</h2>
-            {/* Find the selected entry to show its thumbnail */}
-            {entries.map(entry => {
-              if (entry.id === selectedEntryId) {
-                return (
-                  <div key={entry.id} className="modal-image">
-                    <img
-                      src={entry.thumbnail}
-                      alt={`Bill for ticket ${entry.ticket_number}`}
-                    />
-                  </div>
-                );
-              }
-              return null;
-            })}
-            <textarea
-              placeholder="Enter description of the bill..."
-              rows={4}
-              value={editDescription}
-              onChange={(e) => setEditDescription(e.target.value)}
-            />
-            <div className="modal-actions">
-              <button
-                onClick={() => {
-                  setDescriptionPromptOpen(false);
-                  setSelectedEntryId(null);
-                  setEditDescription('');
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDescriptionSave}
-                disabled={!editDescription.trim()}
-              >
-                Save
-              </button>
+        </>
+        {selectedTicket && (
+          <section className="comparison-view">
+            <div className="section-heading comparison-heading">
+              <div>
+                <p className="eyebrow">Ticket comparison</p>
+                <h2>{selectedTicket.ticket_id}</h2>
+                <p className="comparison-copy">Compare the selected ticket against the docket discrepancy images for this order.</p>
+              </div>
+              <button className="show-data-button" onClick={() => setSelectedTicket(null)}>Back to tickets</button>
             </div>
-          </div>
-        </div>
-      )}
+            <div className={`comparison-result ${comparisonMismatch ? 'comparison-mismatch' : 'comparison-match'}`}>
+              <strong>{comparisonMismatch ? 'Mismatch found' : 'No mismatch found'}</strong>
+              <span>{comparisonMismatch ? 'Review the highlighted ticket or docket information.' : 'The selected ticket and docket evidence are aligned.'}</span>
+            </div>
+            <div className="comparison-grid">
+              <article className="comparison-panel">
+                <p className="eyebrow">Ticket row information</p>
+                <dl className="comparison-details">
+                  <dt>Restaurant</dt><dd>{selectedTicket.restaurant || '—'}</dd>
+                  <dt>Date</dt><dd>{selectedTicket.date || '—'}</dd>
+                  <dt>Ticket total</dt><dd>{selectedTicket.ticket_total || '—'}</dd>
+                  <dt>Payment status</dt><dd>{selectedTicket.payment_status || '—'}</dd>
+                </dl>
+                <div className="comparison-items">
+                  {selectedTicket.items?.map((item, index) => (
+                    <div className={item.is_void ? 'comparison-item mismatch-highlight' : 'comparison-item'} key={`${selectedTicket.ticket_id}-${index}`}>
+                      <strong>{item.item || 'Unnamed item'}</strong>
+                      <span>{item.total || '—'} · Qty {item.qty || '—'}</span>
+                      {item.is_void && <em>VOID</em>}
+                    </div>
+                  ))}
+                </div>
+              </article>
+              <article className="comparison-panel">
+                <p className="eyebrow">Bulk docket discrepancy images</p>
+                {matchingDockets.length === 0 ? (
+                  <div className="comparison-empty mismatch-highlight">No docket evidence matches order {selectedTicket.ticket_id.match(/(\d+)$/)?.[1] || '—'}.</div>
+                ) : matchingDockets.map((docket) => (
+                  <div className={`docket-comparison-card ${docket.discrepancy_type !== 'void' ? 'mismatch-highlight' : ''}`} key={docket.id}>
+                    <div className="comparison-card-heading"><strong>Order {docket.order_number}</strong><span className="badge badge-void">{docket.discrepancy_type || 'unknown'}</span></div>
+                    <p>{docket.item || 'Docket item not parsed'}</p>
+                    <span>{docket.description || 'No handwritten reason captured'}</span>
+                    {docket.image_filename && <small>{docket.image_filename}</small>}
+                  </div>
+                ))}
+              </article>
+            </div>
+          </section>
+        )}
+      </main>
+      <footer className="app-footer">
+        <span>TIL System</span>
+        <span>Restaurant operations workspace</span>
+      </footer>
     </div>
   );
 }
