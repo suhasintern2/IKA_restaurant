@@ -4,6 +4,8 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from datetime import datetime
 
+from app.models.segmentation import segment_text
+
 def parse_extracted_text(extracted_text: str) -> dict:
     """
     Parse raw extracted text from OCR to identify structured fields.
@@ -15,6 +17,8 @@ def parse_extracted_text(extracted_text: str) -> dict:
     Returns:
         dict: Contains parsed fields (restaurant, ticket_number, discrepancy_type, description)
               plus extra_fields for unexpected bill fields
+              Blocks (structured line items / discrepancies / totals / payment) are
+              added under ``blocks``, ``line_items`` and ``discrepancies``.
               Missing fields will be None or empty strings
     """
     # Initialize result with default/empty values
@@ -144,6 +148,19 @@ def parse_extracted_text(extracted_text: str) -> dict:
                 if len(value) < 100 and len(key) < 30:
                     result["extra_fields"][key] = value
 
+    # 6. Block segmentation: structured line items, discrepancies, totals,
+    #    payment and metadata. The discrepancy type comes from the line-item
+    #    markers ONLY (never from summary lines like "Voids Total").
+    blocks = segment_text(extracted_text)
+    result["blocks"] = blocks
+    result["line_items"] = blocks["line_items"]
+    result["discrepancies"] = blocks["discrepancies"]
+
+    if blocks["discrepancies"]:
+        types = sorted({d["type"] for d in blocks["discrepancies"] if d["type"] != "unknown"})
+        if types:
+            result["discrepancy_type"] = ", ".join(types)
+
     return result
 
 class EntryBase(BaseModel):
@@ -154,6 +171,7 @@ class EntryBase(BaseModel):
     description: Optional[str] = None  # User-provided description
     status: str  # matched, needs_description, needs_ticket_number, needs_restaurant, needs_discrepancy_type, needs_review
     extra_fields: Optional[Dict[str, Any]] = None  # Extra bill fields captured from OCR
+    blocks: Optional[Dict[str, Any]] = None  # Structured segmentation of the bill
     image_filename: Optional[str] = None  # Stored image filename for reference
 
 class EntryCreate(EntryBase):

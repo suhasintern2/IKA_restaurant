@@ -11,6 +11,32 @@ router = APIRouter()
 if not os.path.exists("./data/til_system.db"):
     init_db()
 
+
+def _row_to_entry(row) -> Entry:
+    """Convert a sqlite3.Row into an Entry, deserializing JSON columns."""
+    def _load_json(key):
+        raw = row[key]
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    return Entry(
+        id=row['id'],
+        restaurant=row['restaurant'],
+        ticket_number=row['ticket_number'],
+        discrepancy_type=row['discrepancy_type'],
+        extracted_text=row['extracted_text'],
+        description=row['description'],
+        status=row['status'],
+        extra_fields=_load_json('extra_fields'),
+        blocks=_load_json('blocks'),
+        image_filename=row['image_filename'],
+    )
+
+
 @router.get("/entries", response_model=List[Entry])
 async def get_entries_endpoint(
     restaurant: Optional[str] = Query(None, description="Filter by restaurant"),
@@ -27,32 +53,7 @@ async def get_entries_endpoint(
         List of entry objects
     """
     rows = get_entries(restaurant=restaurant, ticket_number=ticket_number)
-
-    # Convert sqlite3.Row objects to Entry models
-    entries = []
-    for row in rows:
-        # Parse extra_fields from JSON if present
-        extra_fields = None
-        if row['extra_fields']:
-            try:
-                extra_fields = json.loads(row['extra_fields'])
-            except (json.JSONDecodeError, TypeError):
-                extra_fields = None
-
-        entry = Entry(
-            id=row['id'],
-            restaurant=row['restaurant'],
-            ticket_number=row['ticket_number'],
-            discrepancy_type=row['discrepancy_type'],
-            extracted_text=row['extracted_text'],
-            description=row['description'],
-            status=row['status'],
-            extra_fields=extra_fields,
-            image_filename=row['image_filename']
-        )
-        entries.append(entry)
-
-    return entries
+    return [_row_to_entry(row) for row in rows]
 
 @router.patch("/entries/{entry_id}", response_model=Entry)
 async def update_entry_endpoint(entry_id: int, entry_update: EntryUpdate):
@@ -79,25 +80,7 @@ async def update_entry_endpoint(entry_id: int, entry_update: EntryUpdate):
 
     if not update_data:
         # If no fields to update, return existing entry
-        # Parse extra_fields from JSON if present
-        extra_fields = None
-        if existing_entry['extra_fields']:
-            try:
-                extra_fields = json.loads(existing_entry['extra_fields'])
-            except (json.JSONDecodeError, TypeError):
-                extra_fields = None
-
-        return Entry(
-            id=existing_entry['id'],
-            restaurant=existing_entry['restaurant'],
-            ticket_number=existing_entry['ticket_number'],
-            discrepancy_type=existing_entry['discrepancy_type'],
-            extracted_text=existing_entry['extracted_text'],
-            description=existing_entry['description'],
-            status=existing_entry['status'],
-            extra_fields=extra_fields,
-            image_filename=existing_entry['image_filename']
-        )
+        return _row_to_entry(existing_entry)
 
     # Update the entry
     success = update_entry(entry_id, update_data)
@@ -109,25 +92,7 @@ async def update_entry_endpoint(entry_id: int, entry_update: EntryUpdate):
     if not updated_entry:
         raise HTTPException(status_code=404, detail="Entry not found after update")
 
-    # Parse extra_fields from JSON if present
-    extra_fields = None
-    if updated_entry['extra_fields']:
-        try:
-            extra_fields = json.loads(updated_entry['extra_fields'])
-        except (json.JSONDecodeError, TypeError):
-            extra_fields = None
-
-    return Entry(
-        id=updated_entry['id'],
-        restaurant=updated_entry['restaurant'],
-        ticket_number=updated_entry['ticket_number'],
-        discrepancy_type=updated_entry['discrepancy_type'],
-        extracted_text=updated_entry['extracted_text'],
-        description=updated_entry['description'],
-        status=updated_entry['status'],
-        extra_fields=extra_fields,
-        image_filename=updated_entry['image_filename']
-    )
+    return _row_to_entry(updated_entry)
 
 # Note: POST /entries would be called internally by the upload endpoint
 # after text extraction and parsing, but that's outside the scope of Division 2
