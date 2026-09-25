@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import './App.css';
 import { uploadTicketScreenshotBatch, uploadDocketImageBatch } from './api/upload';
 import { exportDockets, exportTickets, getDockets, getTickets } from './api/records';
+import { updateEntry } from './api/entries';
 
 // Fallback options shown only while the table is empty; real options are
 // derived from the restaurant values the backend actually returns.
@@ -16,13 +17,22 @@ function App() {
   const [docketUploadItems, setDocketUploadItems] = useState([]);
   const [showDocketData, setShowDocketData] = useState(false);
   const [docketUploadData, setDocketUploadData] = useState([]);
+  const [comparisonExcelFile, setComparisonExcelFile] = useState(null);
+  const [comparisonLongSlipFile, setComparisonLongSlipFile] = useState(null);
   const activeView = 'tickets';
   const [tickets, setTickets] = useState([]);
   const [dockets, setDockets] = useState([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState('');
   const [selectedTicket, setSelectedTicket] = useState(null);
+  const [comparisonCopyStatus, setComparisonCopyStatus] = useState('');
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [recordsError, setRecordsError] = useState(null);
+  // Description prompt state
+  const [descriptionPromptOpen, setDescriptionPromptOpen] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [descriptionValue, setDescriptionValue] = useState('');
+  const [descriptionSaving, setDescriptionSaving] = useState(false);
+  const [descriptionError, setDescriptionError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +52,29 @@ function App() {
       });
     return () => { cancelled = true; };
   }, []);
+
+  // Helper function to get entry ID for a record (ticket or docket)
+  const getEntryIdForRecord = async (record) => {
+    if (activeView === 'dockets') {
+      // For dockets, the API response includes the id field
+      return record.id;
+    } else {
+      // For tickets, we need to find the associated entry by ticket_number
+      try {
+        const entries = await getEntries({ ticketNumber: record.ticket_id });
+        if (entries.length > 0) {
+          // Return the first entry's ID (ordered by created_at descending per getEntries)
+          return entries[0].id;
+        } else {
+          // No entries found for this ticket
+          throw new Error(`No entries found for ticket ${record.ticket_id}`);
+        }
+      } catch (err) {
+        console.error(`Failed to get entry ID for ticket ${record.ticket_id}:`, err);
+        throw err;
+      }
+    }
+  };
 
   const handleTicketScreenshotUpload = async (files) => {
     setTicketUploadLoading(true);
@@ -131,19 +164,13 @@ function App() {
     }
   };
 
-  const handleRecordsExport = async (view) => {
-    try {
-      if (view === 'tickets') await exportTickets();
-      if (view === 'dockets') await exportDockets();
-    } catch (err) {
-      alert(`Error exporting parsed data: ${err.message}`);
-    }
-  };
-
   const recordRows = activeView === 'tickets' ? tickets : dockets;
   const restaurantOptions = [...new Set(tickets.map((ticket) => ticket.restaurant).filter(Boolean))].sort();
   const filteredTickets = selectedRestaurant
     ? tickets.filter((ticket) => ticket.restaurant === selectedRestaurant)
+    : [];
+  const filteredDockets = selectedRestaurant
+    ? dockets.filter((docket) => docket.restaurant === selectedRestaurant)
     : [];
 
   const requireRestaurant = () => {
@@ -163,6 +190,55 @@ function App() {
     || matchingDockets.some((docket) => docket.discrepancy_type !== 'void')
   );
 
+  const handleSelectTicket = (ticket) => {
+    setSelectedTicket(ticket);
+    setComparisonCopyStatus('');
+  };
+
+  const handleRecordsExport = async (view) => {
+    try {
+      if (view === 'tickets') await exportTickets();
+      if (view === 'dockets') await exportDockets();
+    } catch (err) {
+      alert(`Error exporting parsed data: ${err.message}`);
+    }
+  };
+
+  const handleCopyComparisonData = async () => {
+    if (!selectedTicket) return;
+    const structuredData = {
+      ticket: {
+        ticket_id: selectedTicket.ticket_id,
+        restaurant: selectedTicket.restaurant,
+        date: selectedTicket.date,
+        ticket_total: selectedTicket.ticket_total,
+        payment_status: selectedTicket.payment_status,
+        items: selectedTicket.items?.map((item) => ({
+          item: item.item,
+          total: item.total,
+          qty: item.qty,
+          is_void: item.is_void
+        })) || []
+      },
+      dockets: matchingDockets.map((docket) => ({
+        order_number: docket.order_number,
+        item: docket.item,
+        discrepancy_type: docket.discrepancy_type,
+        handwritten_reason: docket.description
+      })),
+      comparison_mismatch: Boolean(comparisonMismatch)
+    };
+
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard access is not available in this browser.');
+      await navigator.clipboard.writeText(JSON.stringify(structuredData, null, 2));
+      setComparisonCopyStatus('Copied');
+      window.setTimeout(() => setComparisonCopyStatus(''), 1800);
+    } catch (err) {
+      alert(`Failed to copy comparison data: ${err.message}`);
+    }
+  };
+
   const renderTicketTable = (rows, label) => (
     <div className="upload-data-table">
       <p className="eyebrow">{label}</p>
@@ -170,19 +246,71 @@ function App() {
         <table className="entries-table parsed-table">
           <thead><tr>
             <th className="ticket-id-header">Ticket Number</th><th>Uploaded</th><th>Restaurant</th><th>Date</th><th>Terminal</th>
-            <th>Table</th><th>Department</th><th>User</th><th>Payment Status</th><th>Credit Card Amount</th><th>Items</th><th>Ticket Total</th><th>Grand Total</th><th>Charged</th>
+            <th>Table</th><th>Department</th><th>User</th><th>Payment Status</th><th>Status</th><th>Credit Card Amount</th><th>Items</th><th>Ticket Total</th><th>Grand Total</th><th>Charged</th>
           </tr></thead>
           <tbody>
-            {rows.length === 0 ? <tr><td colSpan="14" className="empty-table">No parsed ticket screenshots yet.</td></tr> : rows.map((ticket) => (
-              <tr key={ticket.ticket_id} className={`ticket-select-row ${selectedTicket?.ticket_id === ticket.ticket_id ? 'selected-ticket-row' : ''}`} onClick={() => setSelectedTicket(ticket)} tabIndex="0" onKeyDown={(event) => { if (event.key === 'Enter') setSelectedTicket(ticket); }}>
-                <td className="ticket-id-cell"><strong>{ticket.ticket_id || 'Missing ticket ID'}</strong></td>
-                <td>{ticket.uploaded_at ? new Date(`${ticket.uploaded_at}Z`).toLocaleString() : '—'}</td>
-                <td>{ticket.restaurant || '—'}</td><td>{ticket.date || '—'}</td><td>{ticket.terminal || '—'}</td><td>{ticket.table || '—'}</td>
-                <td>{ticket.department || '—'}</td><td>{ticket.user || '—'}</td><td>{ticket.payment_status || '—'}</td><td>{ticket.credit_card_amount || '—'}</td>
-                <td>{ticket.items?.length ? `${ticket.items.length} item${ticket.items.length === 1 ? '' : 's'}` : '—'}</td>
-                <td>{ticket.ticket_total || '—'}</td><td>{ticket.grand_total || '—'}</td><td>{ticket.charged || '—'}</td>
-              </tr>
-            ))}
+            {rows.length === 0 ? <tr><td colSpan="15" className="empty-table">No parsed ticket screenshots yet.</td></tr> : rows.map((ticket) => {
+              const statusClass = ticket.status === 'needs_description' ? 'needs-description-row' : '';
+              return (
+                <tr
+                  key={ticket.ticket_id}
+                  className={`ticket-select-row ${selectedTicket?.ticket_id === ticket.ticket_id ? 'selected-ticket-row' : ''} ${statusClass}`}
+                  onClick={async () => {
+                    if (ticket.status === 'needs_description') {
+                      try {
+                        const entryId = await getEntryIdForRecord(ticket);
+                        setEditingEntryId(entryId);
+                        setDescriptionValue(ticket.description || '');
+                        setDescriptionPromptOpen(true);
+                      } catch (err) {
+                        setDescriptionError(`Failed to load entry for ticket ${ticket.ticket_id}: ${err.message}`);
+                        setEditingEntryId(null);
+                        setDescriptionValue('');
+                        setDescriptionPromptOpen(true);
+                      }
+                    } else {
+                      handleSelectTicket(ticket);
+                    }
+                  }}
+                  tabIndex="0"
+                  onKeyDown={async (event) => {
+                    if (event.key === 'Enter') {
+                      if (ticket.status === 'needs_description') {
+                        try {
+                          const entryId = await getEntryIdForRecord(ticket);
+                          setEditingEntryId(entryId);
+                          setDescriptionValue(ticket.description || '');
+                          setDescriptionPromptOpen(true);
+                        } catch (err) {
+                          setDescriptionError(`Failed to load entry for ticket ${ticket.ticket_id}: ${err.message}`);
+                          setEditingEntryId(null);
+                          setDescriptionValue('');
+                          setDescriptionPromptOpen(true);
+                        }
+                      } else {
+                        handleSelectTicket(ticket);
+                      }
+                    }
+                  }}
+                >
+                  <td className="ticket-id-cell"><strong>{ticket.ticket_id || 'Missing ticket ID'}</strong></td>
+                  <td>{ticket.uploaded_at ? new Date(`${ticket.uploaded_at}Z`).toLocaleString() : '—'}</td>
+                  <td>{ticket.restaurant || '—'}</td>
+                  <td>{ticket.date || '—'}</td>
+                  <td>{ticket.terminal || '—'}</td>
+                  <td>{ticket.table || '—'}</td>
+                  <td>{ticket.department || '—'}</td>
+                  <td>{ticket.user || '—'}</td>
+                  <td>{ticket.payment_status || '—'}</td>
+                  <td className={`status-cell ${ticket.status}`}>{ticket.status || '—'}</td>
+                  <td>{ticket.credit_card_amount || '—'}</td>
+                  <td>{ticket.items?.length ? `${ticket.items.length} item${ticket.items.length === 1 ? '' : 's'}` : '—'}</td>
+                  <td>{ticket.ticket_total || '—'}</td>
+                  <td>{ticket.grand_total || '—'}</td>
+                  <td>{ticket.charged || '—'}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -194,14 +322,56 @@ function App() {
       <p className="eyebrow">{label}</p>
       <div className="table-scroll">
         <table className="entries-table parsed-table">
-          <thead><tr><th>Order No</th><th>Date</th><th>Time</th><th>Item</th><th>Discrepancy Type</th><th>Handwritten Reason</th></tr></thead>
+          <thead><tr><th>Order No</th><th>Date</th><th>Time</th><th>Item</th><th>Discrepancy Type</th><th>Status</th><th>Handwritten Reason</th></tr></thead>
           <tbody>
-            {rows.length === 0 ? <tr><td colSpan="6" className="empty-table">No parsed dockets yet.</td></tr> : rows.map((docket) => (
-              <tr key={docket.id} className={docket.review_required ? 'parsed-review-row' : ''}>
-                <td><strong>{docket.order_number || '—'}</strong></td><td>{docket.date || '—'}</td><td>{docket.time || '—'}</td><td>{docket.item || '—'}</td>
-                <td><span className={`badge badge-${docket.discrepancy_type || 'unknown'}`}>{docket.discrepancy_type || 'unknown'}</span></td><td className="handwritten-cell">{docket.description || '—'}</td>
-              </tr>
-            ))}
+            {rows.length === 0 ? <tr><td colSpan="7" className="empty-table">No parsed dockets yet.</td></tr> : rows.map((docket) => {
+              const statusClass = docket.status === 'needs_description' ? 'needs-description-row' : '';
+              return (
+                <tr
+                  key={docket.id}
+                  className={`${docket.review_required ? 'parsed-review-row' : ''} ${statusClass}`}
+                  onClick={async () => {
+                    if (docket.status === 'needs_description') {
+                      try {
+                        const entryId = await getEntryIdForRecord(docket);
+                        setEditingEntryId(entryId);
+                        setDescriptionValue(docket.description || '');
+                        setDescriptionPromptOpen(true);
+                      } catch (err) {
+                        setDescriptionError(`Failed to load entry for docket ${docket.order_number}: ${err.message}`);
+                        setEditingEntryId(null);
+                        setDescriptionValue('');
+                        setDescriptionPromptOpen(true);
+                      }
+                    }
+                  }}
+                  tabIndex="0"
+                  onKeyDown={async (event) => {
+                    if (event.key === 'Enter' && docket.status === 'needs_description') {
+                      try {
+                        const entryId = await getEntryIdForRecord(docket);
+                        setEditingEntryId(entryId);
+                        setDescriptionValue(docket.description || '');
+                        setDescriptionPromptOpen(true);
+                      } catch (err) {
+                        setDescriptionError(`Failed to load entry for docket ${docket.order_number}: ${err.message}`);
+                        setEditingEntryId(null);
+                        setDescriptionValue('');
+                        setDescriptionPromptOpen(true);
+                      }
+                    }
+                  }}
+                >
+                  <td><strong>{docket.order_number || '—'}</strong></td>
+                  <td>{docket.date || '—'}</td>
+                  <td>{docket.time || '—'}</td>
+                  <td>{docket.item || '—'}</td>
+                  <td><span className={`badge badge-${docket.discrepancy_type || 'unknown'}`}>{docket.discrepancy_type || 'unknown'}</span></td>
+                  <td className={`status-cell ${docket.status}`}>{docket.status || '—'}</td>
+                  <td className="handwritten-cell">{docket.description || '—'}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -248,6 +418,56 @@ function App() {
               {restaurantOptions.map((restaurant) => <option key={restaurant} value={restaurant}>{restaurant}</option>)}
             </select>
           </label>
+        </section>
+
+        <section className="comparison-source-panel" aria-labelledby="comparison-source-title">
+          <div className="comparison-source-copy">
+            <p className="eyebrow">Comparison source</p>
+            <h2 id="comparison-source-title">Choose a file to compare</h2>
+            <p>Use an Excel file for structured data or a long bill slip image. File processing and comparison will be connected by the backend team.</p>
+          </div>
+          <div className="comparison-source-actions">
+            <div className="comparison-source-control">
+              <input
+                id="comparison-excel-upload"
+                className="file-picker"
+                type="file"
+                accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(event) => {
+                  const [file] = Array.from(event.target.files || []);
+                  if (file) setComparisonExcelFile(file);
+                  event.target.value = '';
+                }}
+              />
+              <label className="source-upload-button" htmlFor="comparison-excel-upload">
+                <span className="source-upload-button-icon">XLS</span>
+                Upload Excel
+              </label>
+              <span className={`source-file-selection ${comparisonExcelFile ? 'has-file' : ''}`} title={comparisonExcelFile?.name || ''}>
+                {comparisonExcelFile ? `Selected: ${comparisonExcelFile.name}` : 'Excel file (.xls, .xlsx)'}
+              </span>
+            </div>
+            <div className="comparison-source-control">
+              <input
+                id="comparison-long-slip-upload"
+                className="file-picker"
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  const [file] = Array.from(event.target.files || []);
+                  if (file) setComparisonLongSlipFile(file);
+                  event.target.value = '';
+                }}
+              />
+              <label className="source-upload-button" htmlFor="comparison-long-slip-upload">
+                <span className="source-upload-button-icon">IMG</span>
+                Upload long bill slip
+              </label>
+              <span className={`source-file-selection ${comparisonLongSlipFile ? 'has-file' : ''}`} title={comparisonLongSlipFile?.name || ''}>
+                {comparisonLongSlipFile ? `Selected: ${comparisonLongSlipFile.name}` : 'Long bill slip image'}
+              </span>
+            </div>
+          </div>
         </section>
 
         <section className="bulk-upload-grid">
@@ -366,7 +586,7 @@ function App() {
           {recordsLoading && <p className="loading-state">Loading parsed {activeView}...</p>}
           {recordsError && <p className="error-state">Error: {recordsError}</p>}
           <div className="combined-record-tables">
-            {renderTicketTable(filteredTickets, 'Ticket screenshots data')}
+            {activeView === 'tickets' ? renderTicketTable(filteredTickets, 'Ticket data') : renderDocketTable(filteredDockets, 'Docket data')}
           </div>
         </section>
         </>
@@ -378,7 +598,10 @@ function App() {
                 <h2>{selectedTicket.ticket_id}</h2>
                 <p className="comparison-copy">Compare the selected ticket against the docket discrepancy images for this order.</p>
               </div>
-              <button className="show-data-button" onClick={() => setSelectedTicket(null)}>Back to tickets</button>
+              <div className="button-group">
+                <button className="show-data-button" onClick={() => handleSelectTicket(null)}>Back to tickets</button>
+                <button className="show-data-button" onClick={handleCopyComparisonData}>{comparisonCopyStatus || 'Copy data'}</button>
+              </div>
             </div>
             <div className={`comparison-result ${comparisonMismatch ? 'comparison-mismatch' : 'comparison-match'}`}>
               <strong>{comparisonMismatch ? 'Mismatch found' : 'No mismatch found'}</strong>
@@ -418,6 +641,93 @@ function App() {
               </article>
             </div>
           </section>
+        )}
+        {/* Description Prompt Modal */}
+        {descriptionPromptOpen && (
+          <div className="description-modal-backdrop" onClick={() => {
+            if (descriptionPromptOpen) {
+              setDescriptionPromptOpen(false);
+              setEditingEntryId(null);
+              setDescriptionValue('');
+              setDescriptionError(null);
+            }
+          }}>
+            <div className="description-modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="description-modal-header">
+                <h2>Add Description</h2>
+                <button className="description-modal-close" onClick={() => {
+                  setDescriptionPromptOpen(false);
+                  setEditingEntryId(null);
+                  setDescriptionValue('');
+                  setDescriptionError(null);
+                }}>
+                  ×
+                </button>
+              </div>
+              <div className="description-modal-body">
+                <p className="description-modal-instructions">
+                  Enter a description for this entry. This will help clarify the record for future reference.
+                </p>
+                <div className="description-modal-form">
+                  <label htmlFor="description-input">
+                    Description:
+                  </label>
+                  <textarea
+                    id="description-input"
+                    value={descriptionValue}
+                    onChange={(e) => setDescriptionValue(e.target.value)}
+                    placeholder="Enter description here..."
+                    className="description-input"
+                    rows="4"
+                  />
+                  {descriptionError && (
+                    <p className="description-modal-error">{descriptionError}</p>
+                  )}
+                </div>
+              </div>
+              <div className="description-modal-footer">
+                <button
+                  className="description-modal-button"
+                  onClick={async () => {
+                    setDescriptionSaving(true);
+                    setDescriptionError(null);
+                    try {
+                      await updateEntry(editingEntryId, { description: descriptionValue });
+                      setDescriptionPromptOpen(false);
+                      setEditingEntryId(null);
+                      setDescriptionValue('');
+                      // Refresh the relevant data
+                      if (activeView === 'tickets') {
+                        const refreshedTickets = await getTickets();
+                        setTickets(refreshedTickets);
+                      } else {
+                        const refreshedDockets = await getDockets();
+                        setDockets(refreshedDockets);
+                      }
+                    } catch (err) {
+                      setDescriptionError(`Failed to save description: ${err.message}`);
+                    } finally {
+                      setDescriptionSaving(false);
+                    }
+                  }}
+                  disabled={descriptionSaving}
+                >
+                  {descriptionSaving ? 'Saving...' : 'Save Description'}
+                </button>
+                <button
+                  className="description-modal-button description-modal-button-secondary"
+                  onClick={() => {
+                    setDescriptionPromptOpen(false);
+                    setEditingEntryId(null);
+                    setDescriptionValue('');
+                    setDescriptionError(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
       <footer className="app-footer">
